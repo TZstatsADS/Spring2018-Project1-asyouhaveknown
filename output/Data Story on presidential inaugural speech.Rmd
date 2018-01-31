@@ -1,0 +1,271 @@
+---
+title: "Data Story on Presidential Inaugural Speech by Topic Modeling"
+output:
+  html_document: default
+  html_notebook: default
+  pdf_document: default
+---
+
+Today, I'd love to share with you a data story on Presidential Inaugural Speech. It is a story about different presidents' speech topics by Topic Modeling using sklearn. Specific steps are presented as below.
+
+Step 00 Package Preparation
+
+Firstly, we check and install required packages as follows. Besides normally used ones, nltk is a leading Natrual Language Toolkit and sklearn is loaded for Topic Modeling.
+
+```{python}
+
+# -*- coding:utf-8 -*-
+import nltk
+import os
+import math
+import pandas as pd
+import string
+import csv
+import numpy as np
+from nltk.corpus import stopwords
+from collections import Counter
+
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import NMF, LatentDirichletAllocation
+```
+
+
+Step 01 Text Preprocessing and Data Fetching
+
+Before analyzing, text preprocessing including standardization, punctuation delection and word segmentation is done. A relatively mild stem function is choose to get a better result. Then, data are being fetched and processing.
+For reproducibility, each step is writen as function for later usage.
+
+```{python}
+
+#text preprocessing     
+def get_tokens(text):
+    lowers=text.lower()
+    del_punctua_map=dict((ord(char),None) for char in string.punctuation)
+    no_punctua=lowers.translate(del_punctua_map)
+    tokens=nltk.word_tokenize(no_punctua)
+    return tokens
+
+def stem_tokens(tokens,stemmer):
+    stemmed=[]
+    for item in tokens:
+        stemmed.append(stemmer.lemmatize(item))
+    return stemmed
+    
+def tf(word, count):
+    return count[word] / sum(count.values())
+
+def n_containing(word, count_list):
+    return sum(1 for count in count_list if word in count)
+
+def idf(word, count_list):
+    return math.log(len(count_list) / (1 + n_containing(word, count_list)))
+
+def tfidf(word, count, count_list):
+    return tf(word, count) * idf(word, count_list)
+```
+
+Step 02 Keyword Extraction
+
+Keywords are extracted through TF-IDF then output to "key_words.csv"
+
+```{python, echo = F}
+import nltk
+import os
+import math
+import pandas as pd
+import string
+import csv
+import numpy as np
+from nltk.corpus import stopwords
+from collections import Counter
+
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import NMF, LatentDirichletAllocation
+
+pathdir=os.listdir('D:\\NLP\\data\\InauguralSpeeches')
+
+sall=[]
+
+#text preprocessing     
+def get_tokens(text):
+    lowers=text.lower()
+    del_punctua_map=dict((ord(char),None) for char in string.punctuation)
+    no_punctua=lowers.translate(del_punctua_map)
+    tokens=nltk.word_tokenize(no_punctua)
+    return tokens
+
+def stem_tokens(tokens,stemmer):
+    stemmed=[]
+    for item in tokens:
+        stemmed.append(stemmer.lemmatize(item))
+    return stemmed
+def tf(word, count):
+    return count[word] / sum(count.values())
+
+def n_containing(word, count_list):
+    return sum(1 for count in count_list if word in count)
+
+def idf(word, count_list):
+    return math.log(len(count_list) / (1 + n_containing(word, count_list)))
+
+def tfidf(word, count, count_list):
+    return tf(word, count) * idf(word, count_list)
+pathdir=os.listdir('D:\\NLP\\data\\InauguralSpeeches')
+#print (pathdir)
+ind=0
+txall=[]
+sall=[]
+
+
+#find and output key words through TF-IDF
+for i in pathdir:
+    f=open('D:\\NLP\\data\\InauguralSpeeches\\'+i,'r')
+    tx=f.read()
+    txall.append(tx)
+    tokens=get_tokens(tx)
+  #  filtered=[w for w in tokens if not w in stopwords.words('english')]
+    stemmer=nltk.WordNetLemmatizer()
+    stemmed=stem_tokens(tokens,stemmer)
+    count=Counter(stemmed)
+    sall.append(count)
+    
+wd=[]
+print("\033[0;31m%s\033[0m" % "Key Words:")
+#print ("Key Words")
+for i, count in enumerate(sall):
+    wdd=[]
+    if(i<20):
+        print('\n'+pathdir[i][:-4]+":",end='  ')
+    wdd.append(pathdir[i][:-4])
+    scores = {word: tfidf(word, count, sall) for word in count}
+    sorted_words = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    for word, score in sorted_words[:10]:
+        wdd.append(word)
+        if(i<20):
+            print(word,end=' ')
+    if(i<20):
+        print ('\n')
+    wd.append(wdd)
+with open("key_words.csv","w") as csvfile: 
+    writer = csv.writer(csvfile)
+    writer.writerow(["Speech","Key-words"])
+    writer.writerows(wd)
+ 
+```
+
+Step 03 Topic Modeling
+
+Topic extraction results of Inaugural Speeches are written to "topic_only inaugural.csv". Pathdir is used to deal with inaugural speech data all at the same time.
+
+Then, Topic Modeling is done using NMF, which by compare performs better than LDA (consider the amount of data is realtively small). number of topics is set as 10 and top 4 most related inaugural speeches is given.
+
+
+```{python, warning = F}
+#Topic modeling using NMF
+
+import warnings
+warnings.filterwarnings("ignore")
+
+import nltk
+import os
+import math
+import pandas as pd
+import string
+import csv
+import numpy as np
+from nltk.corpus import stopwords
+from collections import Counter
+
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import NMF, LatentDirichletAllocation
+
+#output topic results to csv
+def display_topics(H, W, feature_names, documents, no_top_words, no_top_documents):
+    Dic={}
+    for topic_idx, topic in enumerate(H):
+        print ("Topic %d:" % (topic_idx))
+        print (" ".join([feature_names[i]
+                        for i in topic.argsort()[:-no_top_words - 1:-1]]))
+ 
+        bb=[feature_names[i] for i in topic.argsort()[:-no_top_words - 1:-1]]
+       
+      
+        top_doc_indices = np.argsort( W[:,topic_idx] )[::-1][0:no_top_documents]
+        for doc_index in top_doc_indices:
+            print (pathdir[doc_index])
+            bb.append(pathdir[doc_index][:-4])
+        Dic.update({'Topic %d:' % (topic_idx):bb})
+    dd=pd.DataFrame(Dic)
+    dd.to_csv("topic_only inaugural.csv",index=False,sep=',')
+
+pathdir=os.listdir('D:\\NLP\\data\\InauguralSpeeches')
+
+txall=[]   
+
+for i in pathdir:
+    f=open('D:\\NLP\\data\\InauguralSpeeches\\'+i,'r')
+    tx=f.read()
+    txall.append(tx)
+
+stemmer=nltk.WordNetLemmatizer()
+for i,st in enumerate(txall):
+    txall[i]=nltk.word_tokenize(st)
+    txall[i]=[stemmer.lemmatize(t) for t in txall[i]]
+    txall[i]=' '.join(txall[i]) 
+    
+no_features =3000
+# NMF is able to use tf-idf
+tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+tfidf = tfidf_vectorizer.fit_transform(txall)
+tfidf_feature_names = tfidf_vectorizer.get_feature_names()
+
+# LDA can only use raw term counts for LDA because it is a probabilistic graphical model
+'''
+tf_vectorizer = CountVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+tf = tf_vectorizer.fit_transform(txall)
+tf_feature_names = tf_vectorizer.get_feature_names()
+'''
+
+no_topics =10
+
+# Run NMF
+nmf_model = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
+nmf_W = nmf_model.transform(tfidf)
+nmf_H = nmf_model.components_
+
+# LDA model (worse result,so give up)
+'''
+lda_model= LatentDirichletAllocation(n_topics=no_topics, max_iter=5, learning_method='online', learning_offset=50.,random_state=0).fit(tf)
+lda_W = lda_model.transform(tf)
+lda_H = lda_model.components_
+'''
+no_top_words =20 
+no_top_documents=4
+display_topics(nmf_H, nmf_W, tfidf_feature_names, txall, no_top_words, no_top_documents)
+#display_topics(lda_H, lda_W, tf_feature_names, txall, no_top_words, no_top_documents) 
+```
+
+
+Analysis:
+
+Based on the results of Topic Modeling. We¡¯ve got some interesting results. I will explain them to you one by one on each topic.
+ 
+For Topic 0, with the keywords ¡°state¡±, ¡°country¡±, ¡°union¡±, ¡°nation¡± as well as ¡°constitution¡±, ¡°law¡±, ¡°duty¡±, ¡°principle¡± and ¡°right¡±, it is obviously closely related to the government and justice, like the president announces his political platform. 
+
+For Topic 1, with the keywords ¡°American¡±, ¡°nation¡± along with ¡°today¡±, ¡°time¡±, ¡°like¡±, ¡°child¡±, ¡°generation¡±, we can easily get a feeling of sense of national pride and the hope for future generations. William J. Clinton is its typical example as someone ideologically a New Democrat and many of whose policies reflected a centrist ¡°Third Way¡± political philosophy.
+
+For Topic 2, with keywords ¡°business¡±, ¡°tariff¡±, ¡°railway¡± and ¡°statue¡±, it seems to talk about the trade development and municipal construction.
+
+For Topic 3, with keywords ¡°counsel¡±, ¡°thought¡±, ¡°purpose¡±, ¡°action¡± as well as ¡°shall¡±, ¡°stand¡±, ¡°drawn¡±, ¡°influence¡±, this topic should be an appeal for every citizen to participation. Woodrow Wilson, as its representation, was an American statesman and academic. Meanwhile, Topic 9, with keywords ¡°freedom¡±, ¡°liberty¡±, ¡°ideal¡±, along with ¡°American¡±, ¡°entitled¡±, ¡°entirely¡±, shares the same theme. 
+
+For Topic 4, with keywords ¡°offense¡±, ¡°war¡±, ¡°slave¡±, ¡°conflict¡± along with ¡°seeking¡±, ¡°pray¡±, it is quite clear that this topic expresses a desire, a determination for ethnic equality. Meanwhile, this topic is quite similar to Topic 6, with keywords like ¡°war¡±, ¡°savage¡± and ¡°suffer¡±, which reflects the American Civil War. James Garfield and James Madison are two outstanding examples of this topic. Actually, Topic 7 is also closely related, while in some sense kind of stress ¡°sacrifice¡±.
+
+For Topic 5, with keywords ¡°oath¡±, ¡°duty¡±, ¡°constitution¡± as well as ¡°injunction¡±, ¡°magistrate¡±, ¡°ceremony¡±, is more like a solemn oath. And Topic 8 sounds cheerful and encouraging with keywords ¡°desirable¡±, ¡°best¡± and ¡°greatest¡±.
+
+Different president from various background in different historical period focus on different topics, while some presidents, like Franklin D. Roosevelt¡¯s speech covers a wide range of topics. This may somewhat due to the specialty of certain historical event like The New Deal. What¡¯s more, it is at first a little bit surprising that the names of more recent presidents like Barack Obama or Donald J. Trump. After further reflection, such phenomena may be a result of social development and a stronger appeal to opening and freedom, thus the themes of presidential inaugural speeches become harder to generate or define.
+
+
+Prospect:
+
+This attempt of text mining on U.S. presidential inaugural speech mainly focus on keywords extraction and topic modeling. Based on 10 different topics, interesting stories behind presidential inaugural speech is mined and explanations are given. However, further analyzes on partisanship or relationship between presidents remain to be done. Moreover, given the limitation of time and my personal skill, more advanced methods like data visualization haven¡¯t been included. All in all, thanks for listening to my stories and more meaningful data stories on presidential inaugural speech is there waiting for us to explore.
+ 
